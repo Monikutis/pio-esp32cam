@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include "esp_camera.h"
 #include <WiFi.h>
+#include "motor_pins.h"
 
 //
 // WARNING!!! PSRAM IC required for UXGA resolution and high JPEG quality
@@ -75,6 +76,17 @@ void setup() {
     Serial.printf("Camera init failed with error 0x%x", err);
     return;
   }
+
+  // motor init
+  pinMode(PIN_FORWARD, OUTPUT);
+  pinMode(PIN_BACKWARD, OUTPUT);
+  pinMode(PIN_LEFT, OUTPUT);
+  pinMode(PIN_RIGHT, OUTPUT);
+
+  digitalWrite(PIN_FORWARD, LOW);
+  digitalWrite(PIN_BACKWARD, LOW);
+  digitalWrite(PIN_LEFT, LOW);
+  digitalWrite(PIN_RIGHT, LOW);
 
   sensor_t * s = esp_camera_sensor_get();
   // initial sensors are flipped vertically and colors are a bit saturated

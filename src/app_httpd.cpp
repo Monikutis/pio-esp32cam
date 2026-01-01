@@ -21,6 +21,42 @@
 #include "fb_gfx.h"
 #include "fd_forward.h"
 #include "fr_forward.h"
+#include "motor_pins.h"
+
+static void activateForward() {
+  digitalWrite(PIN_FORWARD, HIGH);
+  digitalWrite(PIN_BACKWARD, LOW);
+  digitalWrite(PIN_LEFT, LOW);
+  digitalWrite(PIN_RIGHT, LOW);
+}
+
+static void activateBackward() {
+  digitalWrite(PIN_FORWARD, LOW);
+  digitalWrite(PIN_BACKWARD, HIGH);
+  digitalWrite(PIN_LEFT, LOW);
+  digitalWrite(PIN_RIGHT, LOW);
+}
+
+static void activateLeft() {
+  digitalWrite(PIN_FORWARD, LOW);
+  digitalWrite(PIN_BACKWARD, LOW);
+  digitalWrite(PIN_LEFT, HIGH);
+  digitalWrite(PIN_RIGHT, LOW);
+}
+
+static void activateRight() {
+  digitalWrite(PIN_FORWARD, LOW);
+  digitalWrite(PIN_BACKWARD, LOW);
+  digitalWrite(PIN_LEFT, LOW);
+  digitalWrite(PIN_RIGHT, HIGH);
+}
+
+static void activateStop() {
+  digitalWrite(PIN_FORWARD, LOW);
+  digitalWrite(PIN_BACKWARD, LOW);
+  digitalWrite(PIN_LEFT, LOW);
+  digitalWrite(PIN_RIGHT, LOW);
+}
 
 #define ENROLL_CONFIRM_TIMES 5
 #define FACE_ID_SAVE_NUMBER 7
