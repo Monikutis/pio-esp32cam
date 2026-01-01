@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RC Car Control</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        font-family: Arial, sans-serif;
+        background: #f0f0f0;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      #video-container {
+        flex: 1;
+        position: relative;
+        background: black;
+        overflow: hidden;
+      }
+      #video {
+        width: 100%;
+        height: 100%;
+        object-fit: cover; /* Full screen cover */
+      }
+      .controls-overlay {
+        position: absolute;
+        bottom: 20px;
+        left: 0;
+        right: 0;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        padding: 0 30px;
+        pointer-events: none;
+      }
+      .control-group {
+        display: flex;
+        flex-direction: column;
+        gap: 30px;
+        pointer-events: auto;
+      }
+      .control-group.right {
+        align-items: flex-end;
+      }
+      button {
+        width: 90px;
+        height: 90px;
+        background: #007bff;
+        border: none;
+        border-radius: 20px;
+        font-size: 50px;
+        color: white;
+        box-shadow: 0 10px 0 #0056b3, 0 15px 25px rgba(0, 0, 0, 0.4);
+        cursor: pointer;
+        transition: all 0.1s;
+        user-select: none;
+      }
+      button:active {
+        transform: translateY(6px);
+        box-shadow: 0 4px 0 #0056b3, 0 8px 15px rgba(0, 0, 0, 0.4);
+      }
+      /* Arrow symbols */
+      .up::before {
+        content: "↑";
+      }
+      .down::before {
+        content: "↓";
+      }
+      .left::before {
+        content: "←";
+      }
+      .right::before {
+        content: "→";
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="video-container">
+      <img
+        id="video"
+        src="http://webcam.taxibox.it/mjpg/video.mjpg"
+        alt="Camera Stream"
+      />
+      <div class="controls-overlay">
+        <!-- Left side: Up/Down -->
+        <div class="control-group">
+          <button
+            class="up"
+            onmousedown="sendCmd('forward')"
+            ontouchstart="sendCmd('forward')"
+            onmouseup="sendCmd('stop')"
+            ontouchend="sendCmd('stop')"
+          />
+          <button
+            class="down"
+            onmousedown="sendCmd('backward')"
+            ontouchstart="sendCmd('backward')"
+            onmouseup="sendCmd('stop')"
+            ontouchend="sendCmd('stop')"
+          />
+        </div>
+        <!-- Right side: Right/Left -->
+        <div class="control-group right">
+          <button
+            class="right"
+            onmousedown="sendCmd('right')"
+            ontouchstart="sendCmd('right')"
+            onmouseup="sendCmd('stop')"
+            ontouchend="sendCmd('stop')"
+          />
+          <button
+            class="left"
+            onmousedown="sendCmd('left')"
+            ontouchstart="sendCmd('left')"
+            onmouseup="sendCmd('stop')"
+            ontouchend="sendCmd('stop')"
+          />
+        </div>
+      </div>
+    </div>
+
+    <script>
+      let ws = null;
+      function connectWS() {
+        ws = new WebSocket("wss://echo.websocket.org");
+        ws.onopen = () => console.log("WebSocket connected");
+        ws.onclose = () => {
+          console.log("WebSocket disconnected - reconnecting...");
+          setTimeout(connectWS, 1000);
+        };
+        ws.onerror = (err) => console.error("WS error", err);
+      }
+      connectWS();
+
+      function sendCmd(cmd) {
+        console.log("Button pressed: Sending command ->", cmd);
+
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          const message = JSON.stringify({ cmd: cmd });
+          console.log("WebSocket is OPEN → Sending via WS:", message);
+          ws.send(message);
+        } else {
+          console.warn("WebSocket not connected → Falling back to HTTP");
+          console.log("Sending via HTTP fetch: /action?cmd=" + cmd);
+          fetch("/action?cmd=" + cmd)
+            .then((response) => {
+              if (response.ok) console.log("HTTP request successful");
+              else console.error("HTTP request failed:", response.status);
+            })
+            .catch((error) => console.error("HTTP fetch error:", error));
+        }
+      }
+    </script>
+  </body>
+</html>
