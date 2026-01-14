@@ -5,11 +5,11 @@
 #include "motor_pins.h"
 
 static httpd_handle_t server = NULL;
+static httpd_handle_t stream_server = NULL;
 
 #define PART_BOUNDARY "frame"
 #define _STREAM_CONTENT_TYPE "multipart/x-mixed-replace;boundary=" PART_BOUNDARY
 
-// Motor control functions
 static void activateForward() { 
   digitalWrite(PIN_FORWARD, HIGH); 
   digitalWrite(PIN_BACKWARD, LOW); 
@@ -45,7 +45,15 @@ static void activateStop() {
   digitalWrite(PIN_RIGHT, LOW); 
 }
 
-// MJPEG stream handler
+static esp_err_t open_handler(httpd_handle_t hd, int sockfd) {
+    Serial.printf("[SERVER] Client connected. Socket: %d\n", sockfd);
+    return ESP_OK;
+}
+
+static void close_handler(httpd_handle_t hd, int sockfd) {
+    Serial.printf("[SERVER] Client disconnected. Socket: %d\n", sockfd);
+}
+
 static esp_err_t stream_handler(httpd_req_t *req) {
   camera_fb_t * fb = NULL;
   esp_err_t res = ESP_OK;
@@ -106,15 +114,14 @@ static esp_err_t stream_handler(httpd_req_t *req) {
 
     if (res != ESP_OK) break;
 
-    // Small delay to prevent watchdog and give CPU breathing room
-    vTaskDelay(50 / portTICK_PERIOD_MS);  // ~20 fps max, adjust as needed
+    yield();
+    vTaskDelay(2 / portTICK_PERIOD_MS); 
   }
 
-  httpd_resp_send_chunk(req, NULL, 0);  // Close stream properly
+  httpd_resp_send_chunk(req, NULL, 0); 
   return res;
 }
 
-// Command handler (forward, backward, left, right, stop)
 static esp_err_t cmd_handler(httpd_req_t *req) {
   char* buf;
   size_t buf_len;
@@ -147,11 +154,11 @@ static esp_err_t cmd_handler(httpd_req_t *req) {
     free(buf);
   }
 
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
   httpd_resp_send(req, "OK", 2);
   return ESP_OK;
 }
 
-// HTML handler with your original page
 static esp_err_t index_handler(httpd_req_t *req) {
   const char* index_html = R"rawliteral(
 <!DOCTYPE html>
@@ -174,7 +181,7 @@ static esp_err_t index_handler(httpd_req_t *req) {
 </head>
 <body>
   <div id="video-container">
-    <img id="video" src="/stream" alt="Camera Stream" />
+    <img id="video" alt="Camera Stream" />
     <div class="controls-overlay">
       <div class="control-group">
         <button onmousedown="sendCmd('forward')" ontouchstart="sendCmd('forward')" onmouseup="sendCmd('stop')" ontouchend="sendCmd('stop')">↑</button>
@@ -188,9 +195,48 @@ static esp_err_t index_handler(httpd_req_t *req) {
   </div>
 
   <script>
-    function sendCmd(cmd) {
+    // Use different port for stream to avoid blocking
+    const streamPort = 81;
+    const cmdPort = 80;
+    
+    // Set stream source
+    document.getElementById('video').src = `http://${window.location.hostname}:${streamPort}/stream`;
+    
+    // Keep-alive connection pool for commands
+    let cmdQueue = [];
+    let sending = false;
+    
+    async function sendCmd(cmd) {
       console.log("Sending:", cmd);
-      fetch("/action?cmd=" + cmd);
+      
+      // Add to queue
+      cmdQueue.push(cmd);
+      processQueue();
+    }
+    
+    async function processQueue() {
+      if (sending || cmdQueue.length === 0) return;
+      
+      sending = true;
+      const cmd = cmdQueue.shift();
+      
+      try {
+        // Fire and forget 
+        fetch(`http://${window.location.hostname}:${cmdPort}/action?cmd=${cmd}`, {
+          method: 'GET',
+          keepalive: true
+        }).catch(() => {});
+        
+      } catch {
+        //
+      }
+      
+      sending = false;
+      
+      // Process next command
+      if (cmdQueue.length > 0) {
+        setTimeout(processQueue, 10);
+      }
     }
   </script>
 </body>
@@ -204,15 +250,20 @@ static esp_err_t index_handler(httpd_req_t *req) {
 void startCameraServer() {
   httpd_config_t config = HTTPD_DEFAULT_CONFIG();
   config.server_port = 80;
+  config.ctrl_port = 32768;
+  config.max_open_sockets = 7;
   config.lru_purge_enable = true;
+  config.max_uri_handlers = 16;
+  config.open_fn = open_handler;
+  config.close_fn = close_handler;
 
-  Serial.printf("Starting server on port: '%d'\n", config.server_port);
+  Serial.printf("Starting command server on port: '%d'\n", config.server_port);
 
   if (httpd_start(&server, &config) == ESP_OK) {
-    Serial.println("HTTP server started successfully");
+    Serial.println("Command HTTP server started successfully");
 
-    // Register handlers
-    httpd_uri_t index_uri = {
+    // Root page
+    static const httpd_uri_t index_uri = {
       .uri       = "/",
       .method    = HTTP_GET,
       .handler   = index_handler,
@@ -220,22 +271,40 @@ void startCameraServer() {
     };
     httpd_register_uri_handler(server, &index_uri);
 
-    httpd_uri_t cmd_uri = {
+    // Command
+    static const httpd_uri_t cmd_uri = {
       .uri       = "/action",
       .method    = HTTP_GET,
       .handler   = cmd_handler,
       .user_ctx  = NULL
     };
     httpd_register_uri_handler(server, &cmd_uri);
+  } else {
+    Serial.println("Error starting command server!");
+  }
 
-    httpd_uri_t stream_uri = {
+  // Server 2: Video Stream (Port 81)
+  httpd_config_t stream_config = HTTPD_DEFAULT_CONFIG();
+  stream_config.server_port = 81;
+  stream_config.ctrl_port = 32769;
+  stream_config.max_open_sockets = 3;
+  stream_config.lru_purge_enable = true;
+  stream_config.max_uri_handlers = 4;
+
+  Serial.printf("Starting stream server on port: '%d'\n", stream_config.server_port);
+
+  if (httpd_start(&stream_server, &stream_config) == ESP_OK) {
+    Serial.println("Stream HTTP server started successfully");
+
+    // Stream
+    static const httpd_uri_t stream_uri = {
       .uri       = "/stream",
       .method    = HTTP_GET,
       .handler   = stream_handler,
       .user_ctx  = NULL
     };
-    httpd_register_uri_handler(server, &stream_uri);
+    httpd_register_uri_handler(stream_server, &stream_uri);
   } else {
-    Serial.println("Error starting server!");
+    Serial.println("Error starting stream server!");
   }
 }
