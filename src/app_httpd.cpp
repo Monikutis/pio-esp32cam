@@ -127,14 +127,23 @@ static esp_err_t cmd_handler(httpd_req_t *req) {
       if (httpd_query_key_value(buf, "cmd", param, sizeof(param)) == ESP_OK) {
         String cmd = String(param);
         cmd.trim();
+        Serial.printf("[CMD] Parsed cmd: '%s'\n", cmd.c_str());
 
-        if (cmd == "forward")      activateForward();
-        else if (cmd == "backward") activateBackward();
-        else if (cmd == "left")     activateLeft();
-        else if (cmd == "right")    activateRight();
-        else if (cmd == "stop")     activateStop();
+        if (cmd == "forward")      { activateForward();     Serial.println("[CMD] Forward activated"); }
+        else if (cmd == "backward") { activateBackward();   Serial.println("[CMD] Backward activated"); }
+        else if (cmd == "left")     { activateLeft();       Serial.println("[CMD] Left activated"); }
+        else if (cmd == "right")    { activateRight();      Serial.println("[CMD] Right activated"); }
+        else if (cmd == "stop")     { activateStop();       Serial.println("[CMD] Stop activated"); }
+        else {
+          Serial.printf("[CMD] Unknown command: '%s'\n", cmd.c_str());
+        }
+      } else {
+        Serial.println("[CMD] Failed to parse 'cmd' parameter");
       }
+    } else {
+      Serial.println("[CMD] Failed to get query string");
     }
+
     free(buf);
   }
 
